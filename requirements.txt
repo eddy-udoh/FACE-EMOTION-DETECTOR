@@ -1,6 +1,5 @@
-Flask
+streamlit
 tensorflow
 opencv-python-headless
 Pillow
 numpy
-gunicorn
