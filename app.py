@@ -22,6 +22,34 @@ import cv2
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here_change_in_production'  # For flash messages
 
+# --- DATABASE INITIALIZATION MOVED HERE ---
+# This runs *once* when the app starts, ensuring the DB is ready.
+def init_db():
+    """Initialize the database and create tables if they don't exist"""
+    try:
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                age INTEGER NOT NULL,
+                emotion TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        print("✓ Database initialized")
+    except Exception as e:
+        print(f"Database init error: {e}")
+
+# Call the init function to make sure the DB exists
+init_db()
+# ------------------------------------------
+
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB max file size
@@ -47,28 +75,7 @@ EMOTION_RESPONSES = {
 # ============================================================================
 # DATABASE FUNCTIONS
 # ============================================================================
-
-def init_db():
-    """Initialize the database and create tables if they don't exist"""
-    try:
-        conn = sqlite3.connect('database.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
-                age INTEGER NOT NULL,
-                emotion TEXT NOT NULL,
-                image_path TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-        conn.close()
-        print("✓ Database initialized")
-    except Exception as e:
-        print(f"Database init error: {e}")
+# (init_db is now above)
 
 def save_to_database(name, email, age, emotion, image_path):
     """Save user data to the database"""
@@ -149,7 +156,7 @@ def predict_emotion(image_path):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html')  # Make sure this file is index.html or change this to index.htm
 
 @app.route('/submit', methods=['POST'])
 def submit():
@@ -200,6 +207,9 @@ def submit():
         return redirect(url_for('index'))
 
     response_message = EMOTION_RESPONSES.get(emotion, "Emotion detected!")
+    
+    # This HTML response is a bit unconventional but works.
+    # A better way is using render_template('result.html', ...)
     result_message = f"""
     <h2>Detection Complete! 🎉</h2>
     <p><strong>Name:</strong> {name}</p>
@@ -220,6 +230,6 @@ def submit():
 # ============================================================================
 
 if __name__ == '__main__':
-    init_db()
+    # init_db() was moved to the top
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=True) # Added debug=True for local testing
