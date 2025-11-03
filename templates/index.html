@@ -3,70 +3,176 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facial Emotion Recognition</title>
+    <title>AI Mood Analyzer</title>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            width: 100%;
+            background: #ffffff;
+            padding: 25px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #ddd;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #555;
+            margin-bottom: 25px;
+        }
+        
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="number"],
+        .form-group input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box; /* Important for padding to work right */
+        }
+        
+        button[type="submit"] {
+            width: 100%;
+            padding: 12px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button[type="submit"]:hover {
+            background-color: #2980b9;
+        }
+        button[type="submit"]:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        /* Flash Message Styles */
+        .flash-messages {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            background-color: #ecf0f1;
+            border: 1px solid #bdc3c7;
+        }
+        .flash-messages p {
+            margin: 0;
+            font-weight: 500;
+        }
+        
+        #file-name-display {
+            text-align: center;
+            font-style: italic;
+            color: #777;
+            margin-top: 10px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Facial Emotion Recognition</h1>
-    <p>Upload your photo and discover your emotion!</p>
 
-    <!-- Flash messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div>
-                {% for category, message in messages %}
-                    <p>{{ category }}: {{ message }}</p>
-                {% endfor %}
+    <div class="container">
+        <h1>What's Your Mood?</h1>
+        <p class="subtitle">Submit your details and a photo to see what our AI detects.</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <p>{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form action="/submit" method="POST" enctype="multipart/form-data" id="emotionForm">
+            
+            <div class="form-group">
+                <label for="name">Your Name: *</label>
+                <input type="text" id="name" name="name" placeholder="e.g., Jane Doe" required>
             </div>
-        {% endif %}
-    {% endwith %}
 
-    <!-- Form -->
-    <form action="/submit" method="POST" enctype="multipart/form-data" id="emotionForm">
-        <label for="name">Full Name *</label><br>
-        <input type="text" id="name" name="name" placeholder="Enter your full name" required><br><br>
+            <div class="form-group">
+                <label for="email">Your Email: *</label>
+                <input type="email" id="email" name="email" placeholder="e.g., jane@example.com" required>
+            </div>
 
-        <label for="email">Email Address *</label><br>
-        <input type="email" id="email" name="email" placeholder="Enter your email" required><br><br>
+            <div class="form-group">
+                <label for="age">Your Age: *</label>
+                <input type="number" id="age" name="age" placeholder="Please enter your age" min="1" max="150" required>
+            </div>
 
-        <label for="age">Age *</label><br>
-        <input type="number" id="age" name="age" placeholder="Enter your age" min="1" max="150" required><br><br>
-
-        <label for="image">Upload Your Photo *</label><br>
-        <input type="file" id="image" name="image" accept="image/*" required><br><br>
-
-        <button type="submit">Detect Emotion</button>
-    </form>
-
-    <p id="file-name"></p>
+            <div class="form-group">
+                <label for="image">Upload Your Picture: *</label>
+                <input type="file" id="image" name="image" accept="image/*" required>
+            </div>
+            
+            <p id="file-name-display"></p> <button type="submit">Analyze My Face</button>
+        </form>
+    </div>
 
     <script>
         // Display selected filename
         document.getElementById('image').addEventListener('change', function(e) {
             const fileName = e.target.files[0]?.name || 'No file selected';
-            document.getElementById('file-name').textContent = "Selected file: " + fileName;
+            document.getElementById('file-name-display').textContent = "File: " + fileName;
         });
 
         // Form validation
         document.getElementById('emotionForm').addEventListener('submit', function(e) {
+            // Get form values
             const name = document.getElementById('name').value.trim();
             const email = document.getElementById('email').value.trim();
             const age = document.getElementById('age').value;
             const image = document.getElementById('image').files[0];
             
+            // Check if all fields are filled
             if (!name || !email || !age || !image) {
-                e.preventDefault();
-                alert('Please fill in all fields and upload an image!');
+                e.preventDefault(); // Stop the form submission
+                alert('Hold on! All fields and an image are required.');
                 return false;
             }
 
+            // Check for a valid age
             if (age < 1 || age > 150) {
-                e.preventDefault();
-                alert('Please enter a valid age between 1 and 150!');
+                e.preventDefault(); // Stop the form submission
+                alert('That age looks... unlikely. Please enter a value between 1 and 150.');
                 return false;
             }
 
+            // Disable button to prevent multiple submissions
             const submitBtn = document.querySelector('button[type="submit"]');
-            submitBtn.textContent = 'Processing...';
+            submitBtn.textContent = 'Analyzing...';
             submitBtn.disabled = true;
         });
     </script>
