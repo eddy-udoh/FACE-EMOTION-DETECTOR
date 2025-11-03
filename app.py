@@ -1,29 +1,36 @@
 """
 Facial Emotion Recognition Web Application
 Flask app that detects emotions from uploaded images
+(TFLite Version - Optimized for Render)
 """
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU for Render
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU
 
 import sqlite3
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash
 from werkzeug.utils import secure_filename
 import numpy as np
-from tensorflow import keras
 from PIL import Image
 import cv2
+
+# --- TFLITE CHANGE 1: IMPORT TFLITE RUNTIME ---
+# We import the lightweight interpreter instead of the heavy Keras
+try:
+    import tflite_runtime.interpreter as tflite
+except ImportError:
+    import tensorflow.lite as tflite
+# ----------------------------------------------
+
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here_change_in_production'  # For flash messages
+app.secret_key = 'your_secret_key_here_change_in_production'
 
-# --- DATABASE INITIALIZATION MOVED HERE ---
-# This runs *once* when the app starts, ensuring the DB is ready.
 def init_db():
     """Initialize the database and create tables if they don't exist"""
     try:
@@ -48,16 +55,14 @@ def init_db():
 
 # Call the init function to make sure the DB exists
 init_db()
-# ------------------------------------------
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB max file size
+MAX_FILE_SIZE = 16 * 1024 * 1024
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
-# Create uploads folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 EMOTIONS = ['angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral']
@@ -75,7 +80,6 @@ EMOTION_RESPONSES = {
 # ============================================================================
 # DATABASE FUNCTIONS
 # ============================================================================
-# (init_db is now above)
 
 def save_to_database(name, email, age, emotion, image_path):
     """Save user data to the database"""
@@ -94,27 +98,34 @@ def save_to_database(name, email, age, emotion, image_path):
         return False
 
 # ============================================================================
-# MODEL LOADING
+# MODEL LOADING (TFLite Version)
 # ============================================================================
 
+# --- TFLITE CHANGE 2: LOAD TFLITE MODEL ---
+# This is much lighter and faster than loading the .h5 file
 def load_emotion_model():
-    """Load the trained emotion detection model"""
+    """Load the trained TFLite model and allocate tensors"""
     try:
-        model_path = os.path.join(os.getcwd(), 'face_emotionModel.h5')
+        model_path = os.path.join(os.getcwd(), 'face_emotionModel.tflite')
         if not os.path.exists(model_path):
             print("❌ Model file not found:", model_path)
             return None
-        model = keras.models.load_model(model_path, compile=False)
-        print("✓ Model loaded successfully")
-        return model
+        
+        # Load TFLite model
+        interpreter = tflite.Interpreter(model_path=model_path)
+        interpreter.allocate_tensors()  # Allocate memory
+        
+        print("✓ TFLite Model loaded successfully")
+        return interpreter
     except Exception as e:
-        print(f"Error loading model: {e}")
+        print(f"Error loading TFLite model: {e}")
         return None
 
 emotion_model = load_emotion_model()
+# ----------------------------------------------
 
 # ============================================================================
-# IMAGE PROCESSING & PREDICTION
+# IMAGE PROCESSING & PREDICTION (TFLite Version)
 # ============================================================================
 
 def allowed_file(filename):
@@ -127,36 +138,64 @@ def preprocess_image(image_path):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         resized = cv2.resize(gray, (48, 48))
         normalized = resized / 255.0
-        final = normalized.reshape(1, 48, 48, 1)
-        return final
+        
+        # --- TFLITE CHANGE 3: MATCH INPUT TYPE ---
+        # TFLite models are often int8 or float32. We'll use float32.
+        # We also need to add the batch dimension.
+        final_image = np.expand_dims(normalized, axis=0) # (1, 48, 48)
+        final_image = np.expand_dims(final_image, axis=-1) # (1, 48, 48, 1)
+        
+        # Ensure it's the correct type (float32)
+        return final_image.astype(np.float32)
+        # -------------------------------------------
     except Exception as e:
         print(f"Error preprocessing image: {e}")
         return None
 
 def predict_emotion(image_path):
-    """Predict emotion from an image"""
+    """Predict emotion from an image using TFLite"""
     if emotion_model is None:
+        print("❌ Model is not loaded.")
         return None, 0
     try:
         processed_image = preprocess_image(image_path)
         if processed_image is None:
             return None, 0
-        predictions = emotion_model.predict(processed_image, verbose=0)
+
+        # --- TFLITE CHANGE 4: RUNNING PREDICTION ---
+        # Get input and output tensor details
+        input_details = emotion_model.get_input_details()
+        output_details = emotion_model.get_output_details()
+        
+        # Set the input tensor
+        emotion_model.set_tensor(input_details[0]['index'], processed_image)
+        
+        # Run inference
+        emotion_model.invoke()
+        
+        # Get the output tensor
+        predictions = emotion_model.get_tensor(output_details[0]['index'])
+        # -------------------------------------------
+        
+        # Process the results (same as before)
         emotion_index = np.argmax(predictions[0])
         confidence = predictions[0][emotion_index]
         emotion_label = EMOTIONS[emotion_index]
+        
         return emotion_label, float(confidence)
+        
     except Exception as e:
         print(f"Error predicting emotion: {e}")
         return None, 0
 
 # ============================================================================
-# ROUTES
+# ROUTES (No changes needed here)
 # ============================================================================
 
 @app.route('/')
 def index():
-    return render_template('index.html')  # Make sure this file is index.html or change this to index.htm
+    # Make sure your HTML file is 'index.htm' as per your project structure
+    return render_template('index.htm') 
 
 @app.route('/submit', methods=['POST'])
 def submit():
@@ -208,8 +247,6 @@ def submit():
 
     response_message = EMOTION_RESPONSES.get(emotion, "Emotion detected!")
     
-    # This HTML response is a bit unconventional but works.
-    # A better way is using render_template('result.html', ...)
     result_message = f"""
     <h2>Detection Complete! 🎉</h2>
     <p><strong>Name:</strong> {name}</p>
@@ -230,6 +267,5 @@ def submit():
 # ============================================================================
 
 if __name__ == '__main__':
-    # init_db() was moved to the top
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True) # Added debug=True for local testing
+    app.run(host='0.0.0.0', port=port, debug=True)
